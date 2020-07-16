@@ -1,0 +1,258 @@
+% Gemini theme
+% https://github.com/anishathalye/gemini
+
+\documentclass[final]{beamer}
+
+% ====================
+% Packages
+% ====================
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[size=custom,width=120,height=72,scale=1.0]{beamerposter}
+\usetheme{gemini}
+\usecolortheme{gemini-original}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{fontspec}
+\usepackage{minted}
+\setmainfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\usepackage{listings}% http://ctan.org/pkg/listings
+\lstset{
+  basicstyle=\ttfamily,
+  mathescape
+}
+% ====================
+% Lengths
+% ====================
+
+% If you have N columns, choose \sepwidth and \colwidth such that
+% (N+1)*\sepwidth + N*\colwidth = \paperwidth
+\newlength{\sepwidth}
+\newlength{\colwidth}
+\setlength{\sepwidth}{0.025\paperwidth}
+\setlength{\colwidth}{0.3\paperwidth}
+
+\newcommand{\separatorcolumn}{\begin{column}{\sepwidth}\end{column}}
+
+% ====================
+% Title
+% ====================
+
+\title{Extending Distributions with Expectations.jl \textt{}}
+
+\author{Arnav Sood \inst{1}}
+
+\institute[shortinst]{\inst{1} Vancovuer School of Economics, University of British Columbia}
+
+% ====================
+% Footer (optional)
+% ====================
+
+\footercontent{
+  \href{https://arnavsood.com}{https://arnavsood.com} \hfill
+  JuliaCon 2020, Everywhere \hfill
+  \href{mailto:misc@arnavsood.com}{misc@arnavsood.com}}
+% (can be left out to remove footer)
+
+% ====================
+% Logo (optional)
+% ====================
+
+% use this to include logos on the left and/or right side of the header:
+% \logoright{\includegraphics[height=7cm]{logo1.pdf}}
+% \logoleft{\includegraphics[height=7cm]{qe-logo.png}}
+
+% ====================
+% Body
+% ====================
+
+\begin{document}
+
+\begin{frame}[fragile]
+\begin{columns}[t]
+\separatorcolumn
+
+\begin{column}{\colwidth}
+
+  \begin{block}{Advanced Use}
+
+    \heading{Package Composition}
+
+    Because of Julia's multiple dispatch, we can build distribution and expectation objects using any numeric types that implement basic arithmetic functions:
+
+    \begin{verbatim}
+      julia> mu, sigma = 0.5 ± 0.01, 1.0 ± 0.01
+      (0.5 ± 0.01, 1.0 ± 0.01)
+      
+      julia> d = Normal(mu, sigma);
+      
+      julia> E = expectation(d);
+      
+      julia> E(x -> (x - mu)^2)
+      1.0 ± 0.02
+      
+      julia> sigma^2
+      1.0 ± 0.02
+    \end{verbatim}
+    \heading{Autodifferentiation}
+    Our expectation operators are compatible with the \texttt{ForwardDiff.jl} autodifferentiation library. This means that they can be embedded in ML training loops.
+
+    \begin{verbatim}
+      julia> f = x -> E(y -> y^2 * x)
+      #59 (generic function with 1 method)
+
+      julia> ForwardDiff.derivative(f, 2)
+      0.9999999999999984
+    \end{verbatim}
+  \end{block}
+
+  \begin{block}{Algorithms}
+
+    If a distribution is named in the following table, there is an optimized method for it available in the package. 
+
+    \begin{table}
+      \centering
+      \begin{tabular}{l r r}
+        \toprule
+        \textbf{Distribution} & \textbf{Quadrature Algorithm} & \textbf{Parameters and Defaults} \\
+        \midrule
+        Normal & Gauss-Hermite & $n = 30$ \\ 
+        LogNormal & Gauss-Hermite & $n = 30$ \\ 
+        Beta & Gauss-Jacobi & $n = 32$ \\ 
+        ChiSq & Gauss-Laguerre & $n = 32$ \\ 
+        Uniform & Gauss-Legendre & $n = 30$ \\ 
+        Exponential & Gauss-Laguere & $n = 32$ \\ 
+        Gamma & Gauss-Laguerre & $n = 32$ \\ 
+        Continuous Univariate (compact) & Gauss-Legendre & $n = 500$ \\ 
+        Continuous Univariate & QuantileRange & $q = \{0.001, 0.002, ..., 0.999\}$ \\ 
+        Univariate & Trapezoidal & N/A \\
+        \bottomrule
+      \end{tabular}
+      \caption{Specialized methods and generic fallbacks available in \texttt{Expectations.jl.} The $n$ parameter is the number of Gaussian quadrature nodes. Defaults were chosen based on either existing software or direct experimentation.}
+    \end{table}
+
+  \end{block}
+
+\end{column}
+
+\separatorcolumn
+
+\begin{column}{\colwidth}
+
+  \begin{block}{Abstract}
+
+    Many statistical problems require taking an expectation of some function $f(x)$, where $x$ is drawn from some known distribution. For example, a well-known economic model of job search \cite{mccall} involves calculating an expected value $\mathbb{E}[f(w)]$, where $w$ is a random wage offer, and $f(\cdot)$ is the lifetime value of that offer.
+
+    Julia's ``Distributions.jl`` \cite{distributions} package provides many random variable objects, but taking expectations is still a laborious process. Traditional approaches include Monte Carlo simulation (slow, and potentially inaccurate), or custom numerical integration (inaccessible for non-statisticians.) And both of these approaches fail to capitalize on one of Julia's key features: the similarity between math and Julia code.
+
+    The ``Expectations.jl`` package addresses these weaknesses.
+    
+    \begin{enumerate}
+      \item We use \textbf{tailored Gaussian quadrature} instead of naive Monte Carlo, which makes our expectation operators smaller (storing two vectors of size $n \approx 32$ instead of massive samples), faster, and deterministic. \textbf{Accuracy is not compromised}; in testing, two pairs of 32-node vectors are sufficient to compute expectations to machine precision.
+      \item Expectation operators are \textbf{reusable objects}, which makes expectation-taking a one-time cost.
+      \item Our operators are \textbf{notationally faithful}, which lets us \textbf{explot Julia's syntax clarity} and \textbf{provide faithful mathematical behavior}. Expectations.jl operators can be used as valid linear operators (acting on vectors, supporting scalar multiplication, implementing arithmetic mixture, etc.)
+    \end{enumerate}
+
+  \end{block}
+
+  \begin{alertblock}{Performance and Accuracy Benchmarks}
+
+    \begin{table}
+      \centering
+      \begin{tabular}{l r r c}
+        \toprule
+        \textbf{Distribution} & \textbf{Expectations.jl} & \textbf{1000-Sample Monte Carlo} & \textbf{$10^6$-Sample Monte Carlo} \\
+        \midrule
+        Normal & (-5, -18) & (-6, -2) & (-3, -5) \\
+        LogNormal & (-5, -15) & (-5, -2) & (-2, -3) \\
+        Beta & (-5, -$\infty$) & (-4, -2) & (-1, -4) \\
+        Gamma & (-5, -15) & (-6, -2) & (-3, -4) \\
+        \bottomrule
+      \end{tabular}
+      \caption{Timed with BenchmarkTools.jl. All Expectation operators are constructed with default arguments. Distributions use standard parameters. Operator construction time is included in benchmark. Results are in (time exponent, error exponent)}
+    \end{table}
+
+  \end{alertblock}
+
+  \begin{block}{Related Software, Dependencies, and Acknowledgements}
+
+  There are analogous packages in other programming languages. For example, in Python the \texttt{sympy.stats} module provides for both symbolic and numerical representations of random variable expectations. And \texttt{scipy.stats} also has support for numerical integration with respect to pdfs.
+
+  Within Julia, we benefit from two major packages: 
+
+  \begin{itemize}
+    \item \textbf{FastGuassQuadrature.jl} \cite{fastquad} is what we call to compute Gaussian nodes and weights. The package provides weights to 16 digit accuracy in $O(n)$ time, using a variety of methods. Examples include:
+    
+    \begin{itemize}
+      \item An analytic expresson (e.g., for Gauss-Legendre with $n \leq 5$), 
+      \item Using Newton's method to solve an indexed polynomial $P_n(x) = 0$.
+      \item Using asymptotic expansions (e.g., Gauss-Legendre with $n \geq 60$).
+    \end{itemize}
+
+    \item \textbf{DistQuads.jl}, which was created by \textbf{Patrick K. Mogensen} of \textbf{Julia Computing}, and which was the forerunner to this package.
+  \end{itemize}
+
+  We also benefit from the generosity of the \textbf{QuantEcon} and its supporters (notably NumFOCUS and the Alfred P. Sloan Foundation).
+  \end{block}
+
+\end{column}
+
+\separatorcolumn
+
+\begin{column}{\colwidth}
+
+  \begin{block}{Numerical Integration for Expectations}
+
+    For a (continuous) univariate random variable $X$, following a cumulative distribution function $G(\cdot)$, the expectation is defined as:
+
+    \begin{equation}
+      \mathbb{E}[f(X)] = \int_{S}f(x) dG(x)
+    \end{equation}
+
+  
+    The integral is what makes this quantity challenging to compute. The defining feature of an expectation estimator is the flavor of numerical integration it employs. 
+
+    \heading{Monte Carlo}
+
+    A Monte Carlo method might approximate it by drawing a large sample of points,  and then simply taking the average: 
+
+    \begin{align}
+      \mathbb{E}_{MC}[f(X)] \approx \frac{1}{N} \sum_{i = 1}^N f(x_i)
+    \end{align}
+
+    \heading{Gaussian Quadrature}
+
+    We compute the integral via so-called \emph{Gaussian quadrature}, which attempts to intelligently select a relatively small set of points $x_i$ and weights $w_i$ to approximate the integral as: 
+
+    \begin{align}
+      \mathbb{E}_{GC}[f(X)] \approx f(\mathbf{x}) \cdot \mathbf{w}
+    \end{align}
+
+    There are numerous variations, tailored to specific domains (compact, infinite, semi-infinite, etc.) 
+    
+    For example, the \textbf{Gauss-Chebyshev Quadrature} rule (for $[-1, 1]$) is often written:
+
+    \begin{align*}
+      x_i &= cos \left(\frac{2i - 1}{2n} \pi \right), \hspace{5 em} w_i = \frac{\pi}{i} \notag 
+    \end{align*}
+
+
+  \end{block}
+
+  \begin{block}{References}
+
+    \nocite{*}
+    \footnotesize{\bibliographystyle{plain}\bibliography{poster}}
+
+  \end{block}
+
+\end{column}
+
+\separatorcolumn
+\end{columns}
+\end{frame}
+
+\end{document}
